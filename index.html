@@ -10,6 +10,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-192.png">
 <title>플랜</title>
+<script src="https://cdn.jsdelivr.net/npm/marked@14/marked.min.js"></script>
 <style>
   :root{
     --void:#0A0E1A; --solid:#FFFFFF;
@@ -356,6 +357,35 @@
   .hidden{display:none !important;}
   @media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important;} body::before{animation:none !important;}}
   :focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+
+  /* ===== 학종 노트 뷰어 (인앱 Obsidian식 렌더) ===== */
+  .hjnav{display:flex;align-items:center;gap:10px;margin:2px 2px 8px;}
+  .hjnav .bk{font-size:14px;font-weight:800;color:var(--accent);}
+  .hjnav .hjgh{color:var(--ink3);font-size:12px;font-weight:700;}
+  .hjtags{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px;}
+  .hjtags .tg{font-size:10.5px;font-weight:700;color:var(--accent);background:var(--accent-soft);padding:3px 9px;border-radius:30px;}
+  .hjdoc{font-size:15px;line-height:1.7;color:var(--ink);word-break:break-word;}
+  .hjdoc h1{font-size:22px;font-weight:800;margin:16px 0 10px;letter-spacing:-.5px;}
+  .hjdoc h2{font-size:18px;font-weight:800;margin:20px 0 8px;}
+  .hjdoc h3{font-size:15.5px;font-weight:800;margin:16px 0 6px;color:var(--ink2);}
+  .hjdoc h4,.hjdoc h5{font-size:14px;font-weight:800;margin:13px 0 5px;color:var(--ink2);}
+  .hjdoc p{margin:9px 0;}
+  .hjdoc ul,.hjdoc ol{margin:8px 0;padding-left:20px;}
+  .hjdoc li{margin:3px 0;}
+  .hjdoc a{color:var(--accent);text-decoration:none;font-weight:600;}
+  .hjdoc code{background:var(--bg2);padding:2px 6px;border-radius:6px;font-size:13px;font-family:ui-monospace,Menlo,monospace;}
+  .hjdoc pre{background:var(--bg2);padding:12px 14px;border-radius:12px;overflow-x:auto;margin:10px 0;}
+  .hjdoc pre code{background:none;padding:0;}
+  .hjdoc blockquote{border-left:3px solid var(--accent);margin:10px 0;padding:6px 0 6px 14px;color:var(--ink2);background:var(--accent-soft);border-radius:0 10px 10px 0;}
+  .hjdoc table{width:100%;border-collapse:collapse;margin:12px 0;font-size:12.5px;display:block;overflow-x:auto;}
+  .hjdoc th,.hjdoc td{border:1px solid var(--line2);padding:7px 9px;text-align:left;white-space:nowrap;}
+  .hjdoc th{background:var(--bg2);font-weight:800;}
+  .hjdoc hr{border:none;border-top:1px solid var(--line2);margin:16px 0;}
+  .hjdoc img{max-width:100%;border-radius:10px;}
+  .hjwl{color:var(--accent2)!important;border-bottom:1px dashed var(--accent2);cursor:pointer;}
+  .hjatt{color:var(--ink3);font-weight:600;}
+  .hjbl{margin-top:22px;border-top:1px solid var(--line2);padding-top:12px;}
+  .hjbl .blh{font-size:11px;font-weight:800;letter-spacing:1px;color:var(--ink3);text-transform:uppercase;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;}
 
 </style>
 </head>
@@ -974,7 +1004,7 @@ function closeAction(){$('#actionsheet').classList.remove('show');$('#ascrim').c
 
 /* ===== settings / sync / backup ===== */
 /* ===== 학종 (GitHub 볼트) ===== */
-let HJ={loaded:false,loading:false,notes:[],err:'',expanded:new Set()};
+let HJ={loaded:false,loading:false,notes:[],err:'',expanded:new Set(),open:null,md:{},noteLoading:false,noteErr:'',scanning:false,scanned:false};
 function hjReload(){HJ.loaded=false;HJ.err='';paint();}
 function hjToggle(p){p=decodeURIComponent(p);if(HJ.expanded.has(p))HJ.expanded.delete(p);else HJ.expanded.add(p);paint();}
 function hjBuildTree(paths){
@@ -994,7 +1024,10 @@ function hjRenderTree(node,depth,c){
     if(open)h+=hjRenderTree(f,depth+1,c);
   });
   node.files.sort((a,b)=>a.name.localeCompare(b.name,'ko')).forEach(fl=>{
-    h+=`<a href="${link(fl.path)}" target="_blank" rel="noopener" class="hjfile" style="padding-left:${depth*16+20}px"><span class="hjfnm">${esc(fl.name.replace(/\.md$/i,''))}</span><span class="hjgh">↗</span></a>`;
+    if(/\.md$/i.test(fl.name))
+      h+=`<div class="hjfile" style="padding-left:${depth*16+20}px;cursor:pointer" onclick="openHjNote('${encodeURIComponent(fl.path)}')"><span class="hjfnm">${esc(fl.name.replace(/\.md$/i,''))}</span><span class="hjgh">›</span></div>`;
+    else
+      h+=`<a href="${link(fl.path)}" target="_blank" rel="noopener" class="hjfile" style="padding-left:${depth*16+20}px"><span class="hjfnm">${esc(fl.name)}</span><span class="hjgh">↗</span></a>`;
   });
   return h;
 }
@@ -1005,8 +1038,66 @@ function hakjongHTML(){
   if(!HJ.loaded){loadHakjong();return `<div class="empty">불러오는 중…</div>`;}
   if(HJ.err)return `<div class="empty">${esc(HJ.err)}<br><button class="btn ghost" style="margin-top:12px" onclick="hjReload()">다시 시도</button></div>`;
   if(!HJ.notes.length)return `<div class="empty">노트 없음</div>`;
+  if(HJ.open){
+    const branch=c.branch||'main';
+    const gh=`https://github.com/${c.repo}/blob/${branch}/${HJ.open.split('/').map(encodeURIComponent).join('/')}`;
+    const title=HJ.open.split('/').pop().replace(/\.md$/i,'');
+    let body;
+    if(HJ.noteLoading)body=`<div class="empty">불러오는 중…</div>`;
+    else if(HJ.noteErr)body=`<div class="empty">${esc(HJ.noteErr)}<br><button class="btn ghost" style="margin-top:12px" onclick="openHjNote('${encodeURIComponent(HJ.open)}')">다시</button></div>`;
+    else body=hjMd(HJ.md[HJ.open])+hjBacklinks(HJ.open);
+    return `<div class="hjnav"><button class="bk" onclick="hjBack()">‹ 볼트</button><a class="hjgh" href="${gh}" target="_blank" rel="noopener" style="margin-left:auto">GitHub ↗</a></div><div class="head" style="padding:2px 4px 10px"><div class="ttl" style="font-size:22px;line-height:1.2">${esc(title)}</div></div><div class="card">${body}</div>`;
+  }
   const tree=hjBuildTree(HJ.notes);
-  return `<div class="eyebrow" style="justify-content:space-between"><span>볼트 · ${HJ.notes.length}개</span><span class="add" onclick="hjReload()">↻ 새로고침</span></div><div class="card" style="padding:6px 8px">${hjRenderTree(tree,0,c)}</div>`;
+  return `<div class="eyebrow" style="justify-content:space-between"><span>볼트 · ${HJ.notes.filter(p=>/\.md$/i.test(p)).length}개 노트</span><span class="add" onclick="hjReload()">↻ 새로고침</span></div><div class="card" style="padding:6px 8px">${hjRenderTree(tree,0,c)}</div>`;
+}
+function hjBack(){HJ.open=null;paint();}
+async function openHjNote(path){
+  path=decodeURIComponent(path);HJ.open=path;HJ.noteErr='';
+  const sc=document.querySelector('.scroll');if(sc)sc.scrollTop=0;
+  if(HJ.md[path]!==undefined){paint();return;}
+  HJ.noteLoading=true;paint();
+  const c=DB.hakjong||{};const branch=c.branch||'main';
+  try{
+    const res=await fetch(`https://api.github.com/repos/${c.repo}/contents/${path.split('/').map(encodeURIComponent).join('/')}?ref=${encodeURIComponent(branch)}`,{headers:{Authorization:'Bearer '+c.token,Accept:'application/vnd.github.raw+json'}});
+    if(!res.ok)throw new Error('GitHub '+res.status);
+    HJ.md[path]=await res.text();
+  }catch(e){HJ.noteErr=e.message;}
+  HJ.noteLoading=false;if(tab==='hakjong')paint();
+}
+function hjResolve(name){name=name.replace(/\.md$/i,'').trim();
+  return HJ.notes.find(p=>p.replace(/\.md$/i,'').split('/').pop()===name)
+    ||HJ.notes.find(p=>p.replace(/\.md$/i,'').split('/').pop().toLowerCase()===name.toLowerCase())||null;}
+function hjOpenLink(name){const p=hjResolve(name);if(p)openHjNote(encodeURIComponent(p));else toast('노트 없음: '+name);}
+function hjMd(src){
+  let tags=[];
+  src=(src||'').replace(/^﻿/,'').replace(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/,(m,y)=>{(y.match(/-\s*([^\n]+)/g)||[]).forEach(x=>tags.push(x.replace(/-\s*/,'').trim()));return'';});
+  src=src.replace(/!?\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g,(m,a,b)=>{a=a.trim();const label=(b||a).trim();
+    if(/\.(png|jpe?g|gif|svg|webp|pdf|hwp|docx?|xlsx?|pptx?|c|py|ipynb)$/i.test(a))return '`📎 '+label+'`';
+    return '['+label+'](wl:'+encodeURIComponent(a)+')';});
+  let html;
+  try{html=window.marked?marked.parse(src,{breaks:true,gfm:true}):('<pre>'+esc(src)+'</pre>');}catch{html='<pre>'+esc(src)+'</pre>';}
+  html=html.replace(/href="wl:([^"]+)"/g,(m,x)=>`class="hjwl" onclick="hjOpenLink('${decodeURIComponent(x).replace(/'/g,"\\'").replace(/"/g,'&quot;')}')"`);
+  const tagH=tags.length?`<div class="hjtags">${tags.map(t=>`<span class="tg">${esc(t)}</span>`).join('')}</div>`:'';
+  return tagH+'<div class="hjdoc">'+html+'</div>';
+}
+async function hjScanAll(){
+  const c=DB.hakjong||{};const branch=c.branch||'main';
+  const todo=HJ.notes.filter(p=>/\.md$/i.test(p)&&HJ.md[p]===undefined);
+  HJ.scanning=true;paint();
+  for(const p of todo){try{const r=await fetch(`https://api.github.com/repos/${c.repo}/contents/${p.split('/').map(encodeURIComponent).join('/')}?ref=${encodeURIComponent(branch)}`,{headers:{Authorization:'Bearer '+c.token,Accept:'application/vnd.github.raw+json'}});if(r.ok)HJ.md[p]=await r.text();}catch{}}
+  HJ.scanning=false;HJ.scanned=true;if(tab==='hakjong')paint();
+}
+function hjBacklinks(path){
+  const base=path.split('/').pop().replace(/\.md$/i,'').replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+  const re=new RegExp('\\[\\[\\s*'+base+'\\s*(\\||\\])');
+  const hits=Object.keys(HJ.md).filter(p=>p!==path&&re.test(HJ.md[p]||''));
+  let h=`<div class="hjbl"><div class="blh"><span>백링크${hits.length?' · '+hits.length:''}</span>`;
+  if(!HJ.scanned)h+=`<span class="add" style="font-weight:700;cursor:pointer" onclick="hjScanAll()">${HJ.scanning?'스캔 중…':'전체 스캔'}</span>`;
+  h+=`</div>`;
+  if(hits.length)h+=hits.sort().map(p=>`<div class="hjfile" style="padding-left:0;cursor:pointer" onclick="openHjNote('${encodeURIComponent(p)}')"><span class="hjfnm">${esc(p.split('/').pop().replace(/\.md$/i,''))}</span><span class="hjgh">›</span></div>`).join('');
+  else h+=`<div style="font-size:12.5px;color:var(--ink3)">${HJ.scanned?'없음':'전체 스캔하면 이 노트를 가리키는 노트가 다 떠요'}</div>`;
+  return h+`</div>`;
 }
 async function loadHakjong(){
   const c=DB.hakjong||{};if(!c.repo||!c.token||HJ.loading)return;HJ.loading=true;
