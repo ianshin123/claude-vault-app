@@ -1,7 +1,7 @@
 /* Claude Vault (플래너 + 학종) 서비스워커.
    HTML은 network-first → 배포 즉시 최신본이 보인다(캐시 갇힘 없음).
    정적 자산은 cache-first. GitHub API는 캐시하지 않음. */
-const CACHE = 'cv-planner-v4';
+const CACHE = 'cv-planner-v5';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', (e) => {

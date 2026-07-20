@@ -362,8 +362,10 @@
   .hjnav{display:flex;align-items:center;gap:10px;margin:2px 2px 8px;}
   .hjnav .bk{font-size:14px;font-weight:800;color:var(--accent);}
   .hjnav .hjgh{color:var(--ink3);font-size:12px;font-weight:700;}
-  .hjgraphwrap{overflow:auto;-webkit-overflow-scrolling:touch;max-height:72vh;border-radius:18px;background:linear-gradient(165deg,rgba(255,255,255,.05),rgba(255,255,255,.02));border:1px solid rgba(255,255,255,.06);padding:4px;touch-action:pan-x pan-y pinch-zoom;}
+  .hjgraphwrap{overflow:auto;-webkit-overflow-scrolling:touch;max-height:74vh;border-radius:18px;background:linear-gradient(165deg,rgba(120,140,170,.07),rgba(120,140,170,.02));border:1px solid var(--line,rgba(120,140,170,.18));padding:0;touch-action:pan-x pan-y pinch-zoom;}
   .hjgraphwrap svg{display:block;}
+  .gzb{width:34px;height:30px;border-radius:10px;border:1px solid var(--line,rgba(120,140,170,.25));background:linear-gradient(165deg,rgba(120,140,170,.1),rgba(120,140,170,.03));color:var(--ink2);font-size:17px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;}
+  .gzb:active{transform:scale(.9);}
   .hjtags{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px;}
   .hjtags .tg{font-size:10.5px;font-weight:700;color:var(--accent);background:var(--accent-soft);padding:3px 9px;border-radius:30px;}
   .hjdoc{font-size:15px;line-height:1.7;color:var(--ink);word-break:break-word;}
@@ -1014,7 +1016,7 @@ function closeAction(){$('#actionsheet').classList.remove('show');$('#ascrim').c
 
 /* ===== settings / sync / backup ===== */
 /* ===== 학종 (GitHub 볼트) ===== */
-let HJ={loaded:false,loading:false,notes:[],err:'',expanded:new Set(),open:null,md:{},noteLoading:false,noteErr:'',scanning:false,scanned:false,graph:false,graphPos:null};
+let HJ={loaded:false,loading:false,notes:[],err:'',expanded:new Set(),open:null,md:{},noteLoading:false,noteErr:'',scanning:false,scanned:false,graph:false,graphPos:null,graphZoom:1};
 function hjReload(){HJ.loaded=false;HJ.err='';paint();}
 function hjToggle(p){p=decodeURIComponent(p);if(HJ.expanded.has(p))HJ.expanded.delete(p);else HJ.expanded.add(p);paint();}
 function hjBuildTree(paths){
@@ -1089,7 +1091,9 @@ function graphTabHTML(){
   const have=Object.keys(HJ.md).filter(p=>/\.md$/i.test(p)).length;
   const hint=HJ.scanned?`${g.nodes.length}개 노트 · ${g.edges.length}개 연결 · 점을 누르면 열려요`
     :`연결선 불러오는 중… (${have}/${want}) · <span class="add" onclick="paint()">새로고침</span>`;
-  return `<div class="eyebrow" style="justify-content:space-between"><span>관계망</span><span class="add" onclick="hjRegraph()">↻ 다시배치</span></div><div class="hjgraphwrap">${hjGraphSVG(g,HJ.graphPos)}</div><div style="font-size:11.5px;color:var(--ink3);margin:8px 4px 0">${hint}</div>`;
+  return `<div class="eyebrow" style="justify-content:space-between;align-items:center"><span>관계망</span><span style="display:flex;align-items:center;gap:4px">`
+    +`<button class="gzb" onclick="hjZoom(0.8)">－</button><button class="gzb" onclick="hjZoom(1.25)">＋</button><span class="add" style="margin-left:8px" onclick="hjRegraph()">↻</span></span></div>`
+    +`<div class="hjgraphwrap">${hjGraphSVG(g,HJ.graphPos)}</div><div style="font-size:11.5px;color:var(--ink3);margin:8px 4px 0">${hint}</div>`;
 }
 function hjRegraph(){HJ.graphPos=null;paint();}
 function hjFolderColor(seg){
@@ -1133,18 +1137,22 @@ function hjLayout(g){
 function hjGraphSVG(g,pos){
   let minX=1e9,minY=1e9,maxX=-1e9,maxY=-1e9;
   pos.forEach(p=>{if(p.x<minX)minX=p.x;if(p.y<minY)minY=p.y;if(p.x>maxX)maxX=p.x;if(p.y>maxY)maxY=p.y;});
-  const pad=60;minX-=pad;minY-=pad;maxX+=pad;maxY+=pad;const w=maxX-minX,h=maxY-minY;
-  const edges=g.edges.map(([a,b])=>`<line x1="${pos[a].x.toFixed(1)}" y1="${pos[a].y.toFixed(1)}" x2="${pos[b].x.toFixed(1)}" y2="${pos[b].y.toFixed(1)}" stroke="rgba(255,255,255,.13)" stroke-width="1.2"/>`).join('');
+  const pad=70;minX-=pad;minY-=pad;maxX+=pad;maxY+=pad;
+  const w=Math.max(maxX-minX,1),h=Math.max(maxY-minY,1);
+  const edges=g.edges.map(([a,b])=>`<line x1="${pos[a].x.toFixed(1)}" y1="${pos[a].y.toFixed(1)}" x2="${pos[b].x.toFixed(1)}" y2="${pos[b].y.toFixed(1)}" stroke="var(--ink3)" stroke-opacity="0.5" stroke-width="1.6"/>`).join('');
   const maxDeg=Math.max(1,...g.nodes.map(n=>n.deg));
   const nodes=g.nodes.map((nd,i)=>{
-    const r=(4+Math.min(nd.deg,10)*1.4).toFixed(1),col=hjFolderColor(nd.seg);
-    const showLbl=nd.deg>=2||g.nodes.length<=24;
-    const lbl=showLbl?`<text x="${pos[i].x.toFixed(1)}" y="${(pos[i].y-(+r)-3).toFixed(1)}" font-size="${nd.deg>=maxDeg*0.6?13:10.5}" fill="var(--ink2)" text-anchor="middle" style="pointer-events:none">${esc(nd.name.length>14?nd.name.slice(0,13)+'…':nd.name)}</text>`:'';
+    const r=(8+Math.min(nd.deg,12)*1.7).toFixed(1),col=hjFolderColor(nd.seg);
+    const big=nd.deg>=maxDeg*0.5;
+    const nm=nd.name.length>16?nd.name.slice(0,15)+'…':nd.name;
+    const lbl=`<text x="${pos[i].x.toFixed(1)}" y="${(pos[i].y-(+r)-5).toFixed(1)}" font-size="${big?20:15}" font-weight="${big?'700':'500'}" fill="var(--ink)" text-anchor="middle" style="pointer-events:none">${esc(nm)}</text>`;
     return `<g onclick="openHjNote('${encodeURIComponent(nd.p)}')" style="cursor:pointer"><circle cx="${pos[i].x.toFixed(1)}" cy="${pos[i].y.toFixed(1)}" r="${r}" fill="${col}"/>${lbl}</g>`;
   }).join('');
-  const dispW=Math.min(Math.max(w,700),1600);
-  return `<svg viewBox="${minX.toFixed(1)} ${minY.toFixed(1)} ${w.toFixed(1)} ${h.toFixed(1)}" width="${dispW.toFixed(0)}" height="${(dispW*h/w).toFixed(0)}" xmlns="http://www.w3.org/2000/svg">${edges}${nodes}</svg>`;
+  const zoom=HJ.graphZoom||1;/* 1:1 픽셀 렌더 → 노드 실제 크기 유지, zoom 배수로 확대/축소, 컨테이너는 스크롤(팬) */
+  const W=Math.round(w*zoom),H=Math.round(h*zoom);
+  return `<svg viewBox="${minX.toFixed(1)} ${minY.toFixed(1)} ${w.toFixed(1)} ${h.toFixed(1)}" width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg" style="max-width:none;display:block">${edges}${nodes}</svg>`;
 }
+function hjZoom(f){HJ.graphZoom=Math.min(4,Math.max(0.3,(HJ.graphZoom||1)*f));paint();}
 async function openHjNote(path){
   path=decodeURIComponent(path);HJ.open=path;HJ.noteErr='';
   const sc=document.querySelector('.scroll');if(sc)sc.scrollTop=0;
