@@ -10,7 +10,8 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-192.png">
 <title>플랜</title>
-<script src="https://cdn.jsdelivr.net/npm/marked@14/marked.min.js"></script>
+<!-- 버전 고정 + SRI. CDN이 변조돼도 해시 불일치면 실행되지 않는다(토큰 보호). 버전 올릴 땐 integrity 해시도 함께 갱신할 것. -->
+<script src="https://cdn.jsdelivr.net/npm/marked@14.1.4/marked.min.js" integrity="sha384-lqPzN0kmFw9t2syAMwVPM4VbAyqsz/lPyYWbb2Xt6nSPM0WPNrpSWCUBgdcAdgnC" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <style>
   :root{
     --void:#0A0E1A; --solid:#FFFFFF;
@@ -444,12 +445,12 @@ let DB=null, curMonth=new Date(), tab='today', planSeg='exam', timerTick=null, s
 let openSubj={}, openProj={};
 
 function blankDB(){return{v:2,modified:Date.now(),
-  settings:{goalHours:7,theme:'dark',accent:'#32ADE6',noteLock:false,notePw:''},
+  settings:{goalHours:7,theme:'dark',accent:'#32ADE6',noteLock:false,notePw:'',notePwH:''},
   sync:{enabled:false,url:'',key:'',last:0},
   subjects:[],exams:[],projects:[],tasks:[],repeats:[],days:{},memos:[]};}
 function load(){
   try{DB=JSON.parse(localStorage.getItem(KEY))||JSON.parse(localStorage.getItem('planner_v1'))||blankDB();}catch{DB=blankDB();}
-  DB.settings=Object.assign({goalHours:7,theme:'dark',accent:'#32ADE6',noteLock:false,notePw:''},DB.settings||{});
+  DB.settings=Object.assign({goalHours:7,theme:'dark',accent:'#32ADE6',noteLock:false,notePw:'',notePwH:''},DB.settings||{});
   DB.sync=Object.assign({enabled:false,url:'',key:'',last:0},DB.sync||{});
   DB.hakjong=Object.assign({repo:'',branch:'main',token:''},DB.hakjong||{});
   ['subjects','exams','projects','tasks','repeats','memos'].forEach(k=>{if(!Array.isArray(DB[k]))DB[k]=[];});
@@ -477,13 +478,33 @@ let saveT=null;
 function save(push=true){DB.modified=Date.now();localStorage.setItem(KEY,JSON.stringify(DB));
   if(push&&DB.sync.enabled){clearTimeout(saveT);saveT=setTimeout(()=>syncPush(true),1500);}}
 let noteUnlocked=false;
-function noteLocked(){return !!(DB.settings.noteLock&&DB.settings.notePw)&&!noteUnlocked;}
-function unlockNote(){const v=($('#notepw_in')?$('#notepw_in').value:'')||'';if(v===DB.settings.notePw){noteUnlocked=true;paint();}else toast('비밀번호가 틀렸어');}
+/* 잠금 비번은 평문으로 저장하지 않는다(SHA-256). 다른 곳에 쓰는 비번을 재사용해도 localStorage에서 새지 않게.
+   ⚠️ 이건 남이 폰을 잠깐 볼 때 가리는 용도지, 개발자도구 앞에서의 보안은 아니다. */
+async function sha256(t){
+  try{const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(t));
+    return Array.from(new Uint8Array(b)).map(x=>x.toString(16).padStart(2,'0')).join('');}catch{return 'plain:'+t;}
+}
+function noteLocked(){return !!(DB.settings.noteLock&&(DB.settings.notePwH||DB.settings.notePw))&&!noteUnlocked;}
+async function unlockNote(){const v=($('#notepw_in')?$('#notepw_in').value:'')||'';
+  const h=await sha256(v);
+  const okHash=DB.settings.notePwH&&h===DB.settings.notePwH;
+  const okLegacy=!DB.settings.notePwH&&DB.settings.notePw&&v===DB.settings.notePw;
+  if(okHash||okLegacy){
+    if(okLegacy){DB.settings.notePwH=h;DB.settings.notePw='';save(false);} /* 옛 평문 저장분을 해시로 승격 */
+    noteUnlocked=true;paint();
+  }else toast('비밀번호가 틀렸어');}
 function lockNoteBox(){return `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:var(--bg2);border:1px solid var(--field-brd);border-radius:16px;padding:12px 14px">`+
   `<span style="font-size:13.5px;font-weight:700;color:var(--ink2)">🔒 한줄평 잠김</span>`+
   `<input id="notepw_in" type="password" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" placeholder="비밀번호" onkeydown="if(event.key==='Enter')unlockNote()" style="flex:1;min-width:110px;border:1px solid var(--field-brd);border-radius:12px;padding:9px 11px;font-size:14px;background:var(--solid);color:var(--ink)">`+
   `<button class="btn ghost" style="padding:9px 16px" onclick="unlockNote()">보기</button></div>`;}
-function toggleNoteLock(){$('#nl_on').classList.toggle('on');DB.settings.noteLock=$('#nl_on').classList.contains('on');DB.settings.notePw=($('#nl_pw')?$('#nl_pw').value:'').trim();save();noteUnlocked=false;if(DB.settings.noteLock&&!DB.settings.notePw)toast('비밀번호를 입력해');else toast(DB.settings.noteLock?'한줄평 잠금 켜짐':'잠금 꺼짐');}
+async function toggleNoteLock(){$('#nl_on').classList.toggle('on');DB.settings.noteLock=$('#nl_on').classList.contains('on');
+  const pw=($('#nl_pw')?$('#nl_pw').value:'').trim();
+  DB.settings.notePw='';                                     /* 평문은 절대 남기지 않는다 */
+  if(pw)DB.settings.notePwH=await sha256(pw);
+  else if(!DB.settings.noteLock)DB.settings.notePwH='';
+  save();noteUnlocked=false;
+  if(DB.settings.noteLock&&!DB.settings.notePwH)toast('비밀번호를 입력해');
+  else toast(DB.settings.noteLock?'한줄평 잠금 켜짐':'잠금 꺼짐');}
 function dayOf(s){if(!DB.days[s])DB.days[s]={studySec:0,goalH:DB.settings.goalHours,running:false,startedAt:0};return DB.days[s];}
 
 /* theme + accent */
@@ -505,12 +526,7 @@ function tasksOn(s){return DB.tasks.filter(t=>t.date===s);}
 function ddaysOn(s){const r=[];DB.projects.forEach(p=>{(p.exams||[]).forEach(e=>{if(e.date===s)r.push({name:p.name+(e.title?' '+e.title:''),color:p.color,kind:'exam'});});(p.milestones||[]).forEach(m=>{if(m.date===s)r.push({name:p.name+' · '+m.text,color:p.color,kind:'mile'});});});return r;}
 function overdueTasks(){const t=todayStr();return DB.tasks.filter(x=>!x.done&&x.date<t&&!x.odk).sort((a,b)=>a.date<b.date?-1:1);}
 function projById(id){return DB.projects.find(p=>p.id===id);}
-function subjById(id){return projById(id);}
-function subjectExams(sid){return DB.exams.filter(e=>e.subjectId===sid).sort((a,b)=>(a.date||'9')<(b.date||'9')?-1:1);}
-function subjProgress(sid){const tt=DB.tasks.filter(t=>t.projectId===sid);if(!tt.length)return 0;return Math.round(tt.filter(t=>t.done).length/tt.length*100);}
 function projProgress(p){const tt=DB.tasks.filter(t=>t.projectId===p.id);const ms=p.milestones||[];const tot=tt.length+ms.length;if(!tot)return 0;return Math.round((tt.filter(t=>t.done).length+ms.filter(m=>m.done).length)/tot*100);}
-function subjSortKey(sb){const exs=subjectExams(sb.id).filter(e=>e.date);if(!exs.length)return Infinity;
-  const up=exs.filter(e=>diffDays(e.date,todayStr())>=0);return Math.min(...(up.length?up:exs).map(e=>parseYmd(e.date).getTime()));}
 function projSortKey(p){const ds=[];(p.exams||[]).forEach(e=>{if(e.date)ds.push(parseYmd(e.date).getTime());});(p.milestones||[]).forEach(m=>{if(m.date&&!m.done)ds.push(parseYmd(m.date).getTime());});return ds.length?Math.min(...ds):Infinity;}
 function allDdays(){const arr=[];
   DB.projects.forEach(p=>{(p.exams||[]).forEach(e=>{if(e.date)arr.push({name:p.name+(e.title?' '+e.title:''),date:e.date,color:p.color,prog:projProgress(p)});});
@@ -826,54 +842,9 @@ function planHTML(){
     h+=`</div>`;});
   return h;}
 function setSeg(s){paint();}
-function planExam(){
-  let h=`<div class="eyebrow">과목 <span class="add" onclick="editSubject()">+ 과목 추가</span></div>`;
-  if(!DB.subjects.length)h+=`<div class="empty">과목을 추가하고 시험·단원을 정리해봐.</div>`;
-  [...DB.subjects].sort((a,b)=>subjSortKey(a)-subjSortKey(b)).forEach(sb=>{
-    const exs=subjectExams(sb.id),prog=subjProgress(sb.id),op=openSubj[sb.id],next=exs.find(e=>e.date&&diffDays(e.date,todayStr())>=0);
-    const mm=memosFor('subject',sb.id);
-    h+=`<div class="block"><div class="bhd ${op?'open':''}" onclick="toggleSubj('${sb.id}')">
-      <span class="swatch" style="background:${sb.color}"></span><span class="bnm">${esc(sb.name)}</span>
-      ${next?`<span class="bdday ${diffDays(next.date,todayStr())<=3?'urgent':''}">${ddayLabel(next.date)}</span>`:''}<span class="chev">▾</span></div>`;
-    if(op){h+=`<div class="bbody"><div class="bmeta"><div class="pbar ${prog>=80?'ok':''}"><i style="width:${prog}%"></i></div><span class="ppct num">${prog}%</span>
-        <button class="minibtn" onclick="event.stopPropagation();editSubject('${sb.id}')">편집</button></div>`;
-      if(!exs.length)h+=`<div style="font-size:13px;color:var(--ink3);padding:4px 0">시험을 추가해.</div>`;
-      exs.forEach(e=>{h+=`<div class="exrow"><div><div class="exnm">${esc(e.title)}</div><div class="exd num">${e.date?fmtK(e.date)+' · '+ddayLabel(e.date):'시험일 미정'}</div></div><button class="minibtn" onclick="editExam('${sb.id}','${e.id}')">편집</button></div>`;
-        (e.items||[]).forEach(it=>{h+=`<div class="item"><span class="subbul"></span><span class="itxt">${esc(it.text)}</span><button class="idel" onclick="delItem('${e.id}','${it.id}')">×</button></div>`;});
-        h+=`<button class="ghostbtn" onclick="addItem('${e.id}')">+ 단원·범위 추가</button>`;});
-      mm.forEach(m=>{h+=`<div class="linkmemo" onclick="editMemo('${m.id}')"><span class="lm">📝</span>${esc(m.title||'(제목 없음)')}</div>`;});
-      h+=`<button class="ghostbtn" style="margin-top:14px;border-style:solid;color:var(--accent)" onclick="editExam('${sb.id}')">+ 시험 추가</button></div>`;}
-    h+=`</div>`;});
-  return h;}
-function planProj(){
-  let h=`<div class="eyebrow">전체 <span class="add" onclick="editProject()">+ 추가</span></div>`;
-  if(!DB.projects.length)h+=`<div class="empty">수행평가·개인 프로젝트를 마일스톤 단위로 관리해봐.</div>`;
-  [...DB.projects].sort((a,b)=>projSortKey(a)-projSortKey(b)).forEach(p=>{
-    const prog=projProgress(p),op=openProj[p.id],ms=(p.milestones||[]).slice().sort((a,b)=>(a.date||'9')<(b.date||'9')?-1:1),mm=memosFor('project',p.id);
-    h+=`<div class="block"><div class="bhd ${op?'open':''}" onclick="toggleProj('${p.id}')">
-      <span class="swatch" style="background:${p.color}"></span><span class="bnm">${esc(p.name)}</span>
-      ${p.date?`<span class="bdday ${diffDays(p.date,todayStr())<=3?'urgent':''}">${ddayLabel(p.date)}</span>`:''}<span class="chev">▾</span></div>`;
-    if(op){h+=`<div class="bbody"><div class="bmeta"><div class="pbar ${prog>=80?'ok':''}"><i style="width:${prog}%"></i></div><span class="ppct num">${prog}%</span>
-        <button class="minibtn" onclick="event.stopPropagation();editProject('${p.id}')">편집</button></div>`;
-      ms.forEach(m=>{h+=`<div class="item"><div class="ibox ${m.done?'done':''}" onclick="toggleMile('${p.id}','${m.id}')"></div><span class="itxt ${m.done?'done':''}">${esc(m.text)}</span>${m.date?`<span class="idday num">${ddayLabel(m.date)}</span>`:''}<button class="idel" onclick="delMile('${p.id}','${m.id}')">×</button></div>`;});
-      mm.forEach(m=>{h+=`<div class="linkmemo" onclick="editMemo('${m.id}')"><span class="lm">📝</span>${esc(m.title||'(제목 없음)')}</div>`;});
-      h+=`<button class="ghostbtn" onclick="editMile('${p.id}')">+ 마일스톤 추가</button></div>`;}
-    h+=`</div>`;});
-  return h;}
-function toggleSubj(id){openSubj[id]=!openSubj[id];paint();}
+/* (레거시 제거) planExam·planProj·editSubject 계열은 planHTML 통합 이후 호출되지 않던 죽은 코드였다.
+   DB.subjects/DB.exams는 옛 데이터 마이그레이션(load의 _unify)에서만 쓰인다. */
 function toggleProj(id){openProj[id]=!openProj[id];paint();}
-let _sw=null;
-function editSubject(id){const sb=id?subjById(id):{name:'',color:PALETTE[DB.subjects.length%PALETTE.length]};_sw=sb.color;
-  openSheet(`<h3>${id?'과목 편집':'새 과목'}</h3><div class="field"><label>과목명</label><input id="s_n" type="text" value="${esc(sb.name)}" placeholder="예: 물리"></div>
-    <div class="field"><label>색상</label><div class="swatches" id="s_sw">${PALETTE.map(c=>`<button class="sw ${c===sb.color?'on':''}" style="background:${c}" data-c="${c}" onclick="pickSw(this)"></button>`).join('')}</div></div>
-    ${id?'':`<div class="field"><label>시험명 (선택)</label><input id="s_et" type="text" placeholder="예: 1학기 기말"></div><div class="field"><label>시험일 (선택)</label><input id="s_ed" type="date"></div>`}
-    <div class="btnrow">${id?`<button class="btn danger" onclick="delSubject('${id}')">삭제</button>`:''}<button class="btn ghost" onclick="closeSheet()">취소</button><button class="btn primary" onclick="saveSubject('${id||''}')">저장</button></div>`);}
-function pickSw(el){document.querySelectorAll('#s_sw .sw').forEach(x=>x.classList.remove('on'));el.classList.add('on');_sw=el.dataset.c;}
-function saveSubject(id){const n=$('#s_n').value.trim();if(!n)return toast('과목명을 입력해');const c=_sw;
-  if(id){const sb=subjById(id);sb.name=n;sb.color=c;}else{const sid=uid();DB.subjects.push({id:sid,name:n,color:c});
-    const et=($('#s_et')?$('#s_et').value.trim():''),ed=($('#s_ed')?$('#s_ed').value:'');if(et||ed){DB.exams.push({id:uid(),subjectId:sid,title:et||'시험',date:ed,items:[]});openSubj[sid]=true;}}
-  save();closeSheet();paint();}
-function delSubject(id){actionSheet('이 과목과 시험을 모두 삭제할까?',[{label:'과목 삭제',danger:true,fn:()=>{DB.subjects=DB.subjects.filter(s=>s.id!==id);DB.exams=DB.exams.filter(e=>e.subjectId!==id);DB.memos.forEach(m=>{if(m.subjectId===id)m.subjectId='';});save();closeSheet();paint();}}]);}
 function editExam(pid,eid){const p=projById(pid);const ex=eid?(p.exams||[]).find(e=>e.id===eid):{title:'',date:''};
   openSheet(`<h3>${eid?'시험 편집':'새 시험'}</h3><div class="field"><label>시험명</label><input id="e_t" type="text" value="${esc(ex.title)}" placeholder="예: 1학기 기말"></div>
     <div class="field"><label>시험일</label><input id="e_d" type="date" value="${ex.date||''}"></div>
@@ -1076,7 +1047,23 @@ async function openHjNote(path){
 function hjResolve(name){name=name.replace(/\.md$/i,'').trim();
   return HJ.notes.find(p=>p.replace(/\.md$/i,'').split('/').pop()===name)
     ||HJ.notes.find(p=>p.replace(/\.md$/i,'').split('/').pop().toLowerCase()===name.toLowerCase())||null;}
-function hjOpenLink(name){const p=hjResolve(name);if(p)openHjNote(encodeURIComponent(p));else toast('노트 없음: '+name);}
+function hjOpenLink(enc){const name=decodeURIComponent(enc||'');const p=hjResolve(name);if(p)openHjNote(encodeURIComponent(p));else toast('노트 없음: '+name);}
+/* 노트 마크다운 안의 원시 HTML을 무력화한다. <template>은 inert라 파싱 중 스크립트 실행·이미지 로드가 없다.
+   같은 오리진에 학종 GitHub 토큰이 있으므로, 노트 한 줄로 토큰이 새는 경로를 막는 게 목적. */
+function hjSanitize(html){
+  const tpl=document.createElement('template');tpl.innerHTML=html;
+  const BAD=/^(SCRIPT|STYLE|IFRAME|OBJECT|EMBED|LINK|META|BASE|FORM|INPUT|BUTTON|TEXTAREA|SELECT|SVG|MATH)$/;
+  const OKP=/^(https?:|mailto:|wl:|#|\/|\.)/i;
+  tpl.content.querySelectorAll('*').forEach(el=>{
+    if(BAD.test(el.tagName)){el.remove();return;}
+    Array.from(el.attributes).forEach(a=>{
+      const n=a.name.toLowerCase(),v=(a.value||'').trim();
+      if(n.startsWith('on')||n==='srcdoc'||n==='style'||n==='formaction'){el.removeAttribute(a.name);return;}
+      if((n==='href'||n==='src'||n==='xlink:href')&&v&&!OKP.test(v))el.removeAttribute(a.name);
+    });
+  });
+  return tpl.innerHTML;
+}
 function hjMd(src){
   let tags=[];
   src=(src||'').replace(/^﻿/,'').replace(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/,(m,y)=>{(y.match(/-\s*([^\n]+)/g)||[]).forEach(x=>tags.push(x.replace(/-\s*/,'').trim()));return'';});
@@ -1084,8 +1071,9 @@ function hjMd(src){
     if(/\.(png|jpe?g|gif|svg|webp|pdf|hwp|docx?|xlsx?|pptx?|c|py|ipynb)$/i.test(a))return '`📎 '+label+'`';
     return '['+label+'](wl:'+encodeURIComponent(a)+')';});
   let html;
-  try{html=window.marked?marked.parse(src,{breaks:true,gfm:true}):('<pre>'+esc(src)+'</pre>');}catch{html='<pre>'+esc(src)+'</pre>';}
-  html=html.replace(/href="wl:([^"]+)"/g,(m,x)=>`class="hjwl" onclick="hjOpenLink('${decodeURIComponent(x).replace(/'/g,"\\'").replace(/"/g,'&quot;')}')"`);
+  try{html=window.marked?hjSanitize(marked.parse(src,{breaks:true,gfm:true})):('<pre>'+esc(src)+'</pre>');}catch{html='<pre>'+esc(src)+'</pre>';}
+  /* x는 encodeURIComponent 결과라 따옴표·역슬래시가 없다 → 속성에 그대로 실어 보내고 핸들러에서 디코드(따옴표 탈출 불가). */
+  html=html.replace(/href="wl:([^"]+)"/g,(m,x)=>`class="hjwl" data-wl="${esc(x)}" onclick="hjOpenLink(this.dataset.wl)"`);
   const tagH=tags.length?`<div class="hjtags">${tags.map(t=>`<span class="tg">${esc(t)}</span>`).join('')}</div>`:'';
   return tagH+'<div class="hjdoc">'+html+'</div>';
 }
@@ -1093,7 +1081,10 @@ async function hjScanAll(){
   const c=DB.hakjong||{};const branch=c.branch||'main';
   const todo=HJ.notes.filter(p=>/\.md$/i.test(p)&&HJ.md[p]===undefined);
   HJ.scanning=true;paint();
-  for(const p of todo){try{const r=await fetch(`https://api.github.com/repos/${c.repo}/contents/${p.split('/').map(encodeURIComponent).join('/')}?ref=${encodeURIComponent(branch)}`,{headers:{Authorization:'Bearer '+c.token,Accept:'application/vnd.github.raw+json'}});if(r.ok)HJ.md[p]=await r.text();}catch{}}
+  /* 순차 fetch면 노트 수만큼 왕복해 느리다 → 6개씩 동시에. (동시 과다는 GitHub rate limit 위험) */
+  const one=async(p)=>{try{const r=await fetch(`https://api.github.com/repos/${c.repo}/contents/${p.split('/').map(encodeURIComponent).join('/')}?ref=${encodeURIComponent(branch)}`,{headers:{Authorization:'Bearer '+c.token,Accept:'application/vnd.github.raw+json'}});if(r.ok)HJ.md[p]=await r.text();}catch{}};
+  const q=todo.slice();
+  await Promise.all(Array.from({length:Math.min(6,q.length)},async()=>{while(q.length)await one(q.shift());}));
   HJ.scanning=false;HJ.scanned=true;if(tab==='hakjong')paint();
 }
 function hjBacklinks(path){
@@ -1153,6 +1144,8 @@ async function syncPush(silent){const{url,key}=syncCreds();
   if(!url||!key){if(!silent)setStat('주소와 비밀키를 넣어','err');return;}
   if(!navigator.onLine){if(!silent)setStat('오프라인 — 연결되면 올라감','idle');return;}
   DB.sync.url=url;DB.sync.key=key;const data=Object.assign({},DB);delete data.sync;
+  /* 🔒 학종 GitHub 토큰은 절대 서버로 내보내지 않는다 (기기 전용 비밀). repo·branch만 동기화. */
+  if(data.hakjong)data.hakjong=Object.assign({},data.hakjong,{token:''});
   try{if(!silent)setStat('올리는 중…','idle');
     const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','X-Sync-Key':key},body:JSON.stringify({data})});
     if(!res.ok)throw new Error(res.status);
@@ -1170,11 +1163,24 @@ async function syncPull(opts){opts=opts||{};const{url,key}=syncCreds();
     if(!remote||!remote.v){if(!opts.silent)setStat('서버에 데이터 없음 — 먼저 올려','idle');return;}
     if(opts.auto&&remote.modified&&DB.modified&&remote.modified<=DB.modified){setStat('최신 상태 · '+nowHM(),'ok');return;}
     if(!opts.auto&&remote.modified&&DB.modified&&remote.modified<DB.modified){if(!confirm('서버 데이터가 이 기기보다 오래됐어. 덮어쓸까?'))return setStat('취소됨','idle');}
-    const sy=DB.sync;remote.sync=sy;DB=remote;localStorage.setItem(KEY,JSON.stringify(DB));load();DB.sync.last=Date.now();localStorage.setItem(KEY,JSON.stringify(DB));applyTheme();paint();
+    const sy=DB.sync;const hjTok=(DB.hakjong||{}).token||'';remote.sync=sy;DB=remote;
+    /* 서버엔 토큰이 없으므로(위 syncPush) 이 기기의 토큰을 유지한다 — 안 그러면 pull 할 때마다 학종 연결이 끊긴다. */
+    DB.hakjong=Object.assign({repo:'',branch:'main',token:''},DB.hakjong||{},{token:hjTok});
+    localStorage.setItem(KEY,JSON.stringify(DB));load();DB.sync.last=Date.now();localStorage.setItem(KEY,JSON.stringify(DB));applyTheme();paint();
     setStat('내려받기 완료 · '+nowHM(),'ok');if(!opts.silent){toast('내려받았어');closeSheet();}
   }catch(e){if(!opts.silent)setStat('실패: '+e.message,'err');}}
-function exportJSON(){const blob=new Blob([JSON.stringify(DB,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='planner-'+todayStr()+'.json';a.click();toast('내보냈어');}
-function importJSON(inp){const f=inp.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const d=JSON.parse(r.result);if(!d.v)throw 0;d.sync=DB.sync;DB=d;localStorage.setItem(KEY,JSON.stringify(DB));load();applyTheme();closeSheet();paint();toast('가져왔어');}catch{toast('파일 형식 오류');}};r.readAsText(f);}
+function exportJSON(){
+  /* 🔒 백업 파일에도 토큰·동기화 비밀키를 넣지 않는다. 새 기기에선 설정에서 다시 입력. */
+  const out=Object.assign({},DB);delete out.sync;
+  if(out.hakjong)out.hakjong=Object.assign({},out.hakjong,{token:''});
+  if(out.settings)out.settings=Object.assign({},out.settings,{notePw:'',notePwH:''});
+  const blob=new Blob([JSON.stringify(out,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='planner-'+todayStr()+'.json';a.click();toast('내보냈어 (토큰·비밀키는 제외)');}
+function importJSON(inp){const f=inp.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const d=JSON.parse(r.result);if(!d.v)throw 0;
+  /* 백업엔 비밀값이 없으므로(exportJSON) 이 기기의 토큰·동기화 설정·잠금 비번은 유지한다. */
+  const hjTok=(DB.hakjong||{}).token||'',pwH=(DB.settings||{}).notePwH||'';
+  d.sync=DB.sync;d.hakjong=Object.assign({repo:'',branch:'main',token:''},d.hakjong||{},{token:hjTok});
+  d.settings=Object.assign({},d.settings||{},{notePw:'',notePwH:pwH});
+  DB=d;localStorage.setItem(KEY,JSON.stringify(DB));load();applyTheme();closeSheet();paint();toast('가져왔어');}catch{toast('파일 형식 오류');}};r.readAsText(f);}
 function wipe(){actionSheet('정말 전체 삭제할까? 되돌릴 수 없어.',[{label:'전체 삭제',danger:true,fn:()=>{localStorage.removeItem(KEY);DB=blankDB();applyTheme();closeSheet();paint();toast('삭제됨');}}]);}
 
 /* ===== sheet ===== */
@@ -1201,7 +1207,6 @@ window.addEventListener('popstate',function(){
 window.addEventListener('online',()=>{if(DB.sync.enabled)syncPush(true);});
 load();applyTheme();paint();pushGuard();
 if(DB.sync.enabled&&navigator.onLine)syncPull({auto:true,silent:true});
-if(DB.sync.enabled&&DB.sync.gistId&&navigator.onLine)pullGist();
 if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
   let _ref=false;navigator.serviceWorker.addEventListener('controllerchange',()=>{if(_ref)return;_ref=true;location.reload();});}
 </script>
