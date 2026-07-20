@@ -362,10 +362,6 @@
   .hjnav{display:flex;align-items:center;gap:10px;margin:2px 2px 8px;}
   .hjnav .bk{font-size:14px;font-weight:800;color:var(--accent);}
   .hjnav .hjgh{color:var(--ink3);font-size:12px;font-weight:700;}
-  .hjgraphwrap{overflow:auto;-webkit-overflow-scrolling:touch;max-height:74vh;border-radius:18px;background:linear-gradient(165deg,rgba(120,140,170,.07),rgba(120,140,170,.02));border:1px solid var(--line,rgba(120,140,170,.18));padding:0;touch-action:pan-x pan-y pinch-zoom;}
-  .hjgraphwrap svg{display:block;}
-  .gzb{width:34px;height:30px;border-radius:10px;border:1px solid var(--line,rgba(120,140,170,.25));background:linear-gradient(165deg,rgba(120,140,170,.1),rgba(120,140,170,.03));color:var(--ink2);font-size:17px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;}
-  .gzb:active{transform:scale(.9);}
   .hjtags{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px;}
   .hjtags .tg{font-size:10.5px;font-weight:700;color:var(--accent);background:var(--accent-soft);padding:3px 9px;border-radius:30px;}
   .hjdoc{font-size:15px;line-height:1.7;color:var(--ink);word-break:break-word;}
@@ -408,7 +404,6 @@
       <button class="nb on" data-tab="today" onclick="switchTab('today')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 2"/></svg><span class="lb">오늘</span></button>
       <button class="nb" data-tab="cal" onclick="switchTab('cal')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="16" rx="3.2"/><path d="M3 9.2h18M8 2.5v4M16 2.5v4"/></svg><span class="lb">달력</span></button>
       <button class="nb" data-tab="hakjong" onclick="switchTab('hakjong')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4 22 9l-10 5L2 9z"/><path d="M6 11.2V15c0 1.2 2.7 2.6 6 2.6s6-1.4 6-2.6v-3.8"/></svg><span class="lb">학종</span></button>
-      <button class="nb" data-tab="graph" onclick="switchTab('graph')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="18" r="2.4"/><circle cx="18" cy="17" r="2.4"/><circle cx="13" cy="6" r="2.6"/><path d="M7.6 16.2 11.4 8M14.6 7.4 16.7 14.7M8.1 17.6l7.6-.7"/></svg><span class="lb">그래프</span></button>
     </div>
     <button class="dock-search" onclick="openSearch()" aria-label="검색"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></button>
   </nav>
@@ -444,7 +439,7 @@ const ACCENTS=['#32ADE6','#4C6FFF','#6E8BFF','#0A84FF','#34C759','#FF7A00','#8B5
 
 /* state */
 const KEY='planner_v2';
-const TABS=['today','cal','hakjong','graph'];
+const TABS=['today','cal','hakjong'];
 let DB=null, curMonth=new Date(), tab='today', planSeg='exam', timerTick=null, statT=null, _animating=false;
 let openSubj={}, openProj={};
 
@@ -532,7 +527,7 @@ function taskTag(t){const pid=t.projectId||t.subjectId;if(!pid)return null;const
 function memosFor(kind,id){return DB.memos.filter(m=>kind==='subject'?m.subjectId===id:m.projectId===id);}
 
 /* ===== paint / tabs / swipe ===== */
-function viewHTML(){return ({today:todayHTML,cal:calHTML,plan:planHTML,hakjong:hakjongHTML,graph:graphTabHTML}[tab]||todayHTML)();}
+function viewHTML(){return ({today:todayHTML,cal:calHTML,plan:planHTML,hakjong:hakjongHTML}[tab]||todayHTML)();}
 function paint(){materializeWindow();V.innerHTML=viewHTML();postPaint();updateNav();}
 function attachReorder(listId,onDone){
   const list=document.getElementById(listId);if(!list||list._rb)return;list._rb=true;
@@ -1016,7 +1011,7 @@ function closeAction(){$('#actionsheet').classList.remove('show');$('#ascrim').c
 
 /* ===== settings / sync / backup ===== */
 /* ===== 학종 (GitHub 볼트) ===== */
-let HJ={loaded:false,loading:false,notes:[],err:'',expanded:new Set(),open:null,md:{},noteLoading:false,noteErr:'',scanning:false,scanned:false,graph:false,graphPos:null,graphZoom:1};
+let HJ={loaded:false,loading:false,notes:[],err:'',expanded:new Set(),open:null,md:{},noteLoading:false,noteErr:'',scanning:false,scanned:false};
 function hjReload(){HJ.loaded=false;HJ.err='';paint();}
 function hjToggle(p){p=decodeURIComponent(p);if(HJ.expanded.has(p))HJ.expanded.delete(p);else HJ.expanded.add(p);paint();}
 function hjBuildTree(paths){
@@ -1065,94 +1060,6 @@ function hakjongHTML(){
   return `<div class="eyebrow" style="justify-content:space-between"><span>볼트 · ${nMd}개 노트</span><span class="add" onclick="hjReload()">↻ 새로고침</span></div><div class="card" style="padding:6px 8px">${hjRenderTree(tree,0,c)}</div>`;
 }
 function hjBack(){HJ.open=null;paint();}
-/* ===== 그래프 탭 (학종 노트 관계망) ===== */
-function graphTabHTML(){
-  $('#headTtl').textContent='그래프';$('#headSub').textContent='학종 노트 관계망';
-  const c=DB.hakjong||{};
-  if(!c.repo||!c.token)return `<div class="empty">설정(⚙)에서 GitHub 저장소와 토큰을<br>연결하면 노트 관계망이 여기 떠요.</div>`;
-  if(!HJ.loaded){loadHakjong();return `<div class="empty">불러오는 중…</div>`;}
-  if(HJ.err)return `<div class="empty">${esc(HJ.err)}<br><button class="btn ghost" style="margin-top:12px" onclick="hjReload()">다시 시도</button></div>`;
-  if(HJ.open){/* 그래프에서 노드 탭 → 노트 열림 (같은 탭 안에서) */
-    const branch=c.branch||'main';
-    const gh=`https://github.com/${c.repo}/blob/${branch}/${HJ.open.split('/').map(encodeURIComponent).join('/')}`;
-    const title=HJ.open.split('/').pop().replace(/\.md$/i,'');
-    let body;
-    if(HJ.noteLoading)body=`<div class="empty">불러오는 중…</div>`;
-    else if(HJ.noteErr)body=`<div class="empty">${esc(HJ.noteErr)}<br><button class="btn ghost" style="margin-top:12px" onclick="openHjNote('${encodeURIComponent(HJ.open)}')">다시</button></div>`;
-    else body=hjMd(HJ.md[HJ.open])+hjBacklinks(HJ.open);
-    return `<div class="hjnav"><button class="bk" onclick="hjBack()">‹ 그래프</button><a class="hjgh" href="${gh}" target="_blank" rel="noopener" style="margin-left:auto">GitHub ↗</a></div><div class="head" style="padding:2px 4px 10px"><div class="ttl" style="font-size:22px;line-height:1.2">${esc(title)}</div></div><div class="card">${body}</div>`;
-  }
-  const want=HJ.notes.filter(p=>/\.md$/i.test(p)).length;
-  if(!want)return `<div class="empty">노트 없음</div>`;
-  // 링크(엣지)용 본문 스캔 — 아직이면 시작. 노드는 전체 노트 목록에서 바로 그림.
-  if(!HJ.scanned&&!HJ.scanning)hjScanAll();
-  const g=hjBuildGraph();
-  if(!HJ.graphPos||HJ.graphPos.length!==g.nodes.length)HJ.graphPos=hjLayout(g);
-  const have=Object.keys(HJ.md).filter(p=>/\.md$/i.test(p)).length;
-  const hint=HJ.scanned?`${g.nodes.length}개 노트 · ${g.edges.length}개 연결 · 점을 누르면 열려요`
-    :`연결선 불러오는 중… (${have}/${want}) · <span class="add" onclick="paint()">새로고침</span>`;
-  return `<div class="eyebrow" style="justify-content:space-between;align-items:center"><span>관계망</span><span style="display:flex;align-items:center;gap:4px">`
-    +`<button class="gzb" onclick="hjZoom(0.8)">－</button><button class="gzb" onclick="hjZoom(1.25)">＋</button><span class="add" style="margin-left:8px" onclick="hjRegraph()">↻</span></span></div>`
-    +`<div class="hjgraphwrap">${hjGraphSVG(g,HJ.graphPos)}</div><div style="font-size:11.5px;color:var(--ink3);margin:8px 4px 0">${hint}</div>`;
-}
-function hjRegraph(){HJ.graphPos=null;paint();}
-function hjFolderColor(seg){
-  const m={'1학년':'#5b8def','지속_프로젝트':'#b06cf0','진로_아카이브':'#28c2a8','독서':'#f0993c','성적':'#ef5a6f','_지침':'#8a94a6'};
-  return m[seg]||'#e9b949';/* 루트(마스터·대시보드 등)=골드 허브 */
-}
-function hjBuildGraph(){
-  const paths=HJ.notes.filter(p=>/\.md$/i.test(p));/* 노드 = 전체 md 노트 (불러온 것만이 아니라) */
-  const idx={};paths.forEach((p,i)=>idx[p]=i);
-  const nodes=paths.map(p=>({p,name:p.split('/').pop().replace(/\.md$/i,''),deg:0,seg:(p.indexOf('/')<0?'':p.split('/')[0])}));
-  const edges=[],seen=new Set();
-  paths.forEach(p=>{const src=HJ.md[p]||'';const re=/\[\[([^\]|#]+)/g;let m;
-    while(m=re.exec(src)){let t=m[1].trim();
-      if(/\.(png|jpe?g|gif|svg|webp|pdf|hwp|docx?|xlsx?|pptx?|c|py|ipynb)$/i.test(t))continue;
-      const tp=hjResolve(t);
-      if(tp&&tp!==p&&idx[tp]!==undefined){const k=idx[p]<idx[tp]?idx[p]+'-'+idx[tp]:idx[tp]+'-'+idx[p];
-        if(!seen.has(k)){seen.add(k);edges.push([idx[p],idx[tp]]);nodes[idx[p]].deg++;nodes[idx[tp]].deg++;}}}});
-  return {nodes,edges};
-}
-function hjLayout(g){
-  const N=g.nodes.length,W=1200,H=1200,cx=W/2,cy=H/2;
-  const pos=g.nodes.map((n,i)=>({x:cx+Math.cos(i/N*6.2832)*350+(Math.random()*20-10),y:cy+Math.sin(i/N*6.2832)*350+(Math.random()*20-10)}));
-  const k=Math.sqrt((W*H)/Math.max(N,1))*0.5;
-  let temp=W*0.12;
-  for(let it=0;it<300;it++){
-    const disp=pos.map(()=>({x:0,y:0}));
-    for(let i=0;i<N;i++)for(let j=i+1;j<N;j++){
-      let dx=pos[i].x-pos[j].x,dy=pos[i].y-pos[j].y,d=Math.sqrt(dx*dx+dy*dy)||0.1;
-      const f=(k*k)/d;dx/=d;dy/=d;disp[i].x+=dx*f;disp[i].y+=dy*f;disp[j].x-=dx*f;disp[j].y-=dy*f;}
-    g.edges.forEach(([a,b])=>{
-      let dx=pos[a].x-pos[b].x,dy=pos[a].y-pos[b].y,d=Math.sqrt(dx*dx+dy*dy)||0.1;
-      const f=(d*d)/k;dx/=d;dy/=d;disp[a].x-=dx*f;disp[a].y-=dy*f;disp[b].x+=dx*f;disp[b].y+=dy*f;});
-    for(let i=0;i<N;i++){
-      disp[i].x+=(cx-pos[i].x)*0.012;disp[i].y+=(cy-pos[i].y)*0.012;/* gravity */
-      let d=Math.sqrt(disp[i].x*disp[i].x+disp[i].y*disp[i].y)||0.1;
-      pos[i].x+=disp[i].x/d*Math.min(d,temp);pos[i].y+=disp[i].y/d*Math.min(d,temp);}
-    temp*=0.985;
-  }
-  return pos;
-}
-function hjGraphSVG(g,pos){
-  let minX=1e9,minY=1e9,maxX=-1e9,maxY=-1e9;
-  pos.forEach(p=>{if(p.x<minX)minX=p.x;if(p.y<minY)minY=p.y;if(p.x>maxX)maxX=p.x;if(p.y>maxY)maxY=p.y;});
-  const pad=70;minX-=pad;minY-=pad;maxX+=pad;maxY+=pad;
-  const w=Math.max(maxX-minX,1),h=Math.max(maxY-minY,1);
-  const edges=g.edges.map(([a,b])=>`<line x1="${pos[a].x.toFixed(1)}" y1="${pos[a].y.toFixed(1)}" x2="${pos[b].x.toFixed(1)}" y2="${pos[b].y.toFixed(1)}" stroke="var(--ink3)" stroke-opacity="0.5" stroke-width="1.6"/>`).join('');
-  const maxDeg=Math.max(1,...g.nodes.map(n=>n.deg));
-  const nodes=g.nodes.map((nd,i)=>{
-    const r=(8+Math.min(nd.deg,12)*1.7).toFixed(1),col=hjFolderColor(nd.seg);
-    const big=nd.deg>=maxDeg*0.5;
-    const nm=nd.name.length>16?nd.name.slice(0,15)+'…':nd.name;
-    const lbl=`<text x="${pos[i].x.toFixed(1)}" y="${(pos[i].y-(+r)-5).toFixed(1)}" font-size="${big?20:15}" font-weight="${big?'700':'500'}" fill="var(--ink)" text-anchor="middle" style="pointer-events:none">${esc(nm)}</text>`;
-    return `<g onclick="openHjNote('${encodeURIComponent(nd.p)}')" style="cursor:pointer"><circle cx="${pos[i].x.toFixed(1)}" cy="${pos[i].y.toFixed(1)}" r="${r}" fill="${col}"/>${lbl}</g>`;
-  }).join('');
-  const zoom=HJ.graphZoom||1;/* 1:1 픽셀 렌더 → 노드 실제 크기 유지, zoom 배수로 확대/축소, 컨테이너는 스크롤(팬) */
-  const W=Math.round(w*zoom),H=Math.round(h*zoom);
-  return `<svg viewBox="${minX.toFixed(1)} ${minY.toFixed(1)} ${w.toFixed(1)} ${h.toFixed(1)}" width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg" style="max-width:none;display:block">${edges}${nodes}</svg>`;
-}
-function hjZoom(f){HJ.graphZoom=Math.min(4,Math.max(0.3,(HJ.graphZoom||1)*f));paint();}
 async function openHjNote(path){
   path=decodeURIComponent(path);HJ.open=path;HJ.noteErr='';
   const sc=document.querySelector('.scroll');if(sc)sc.scrollTop=0;
@@ -1164,7 +1071,7 @@ async function openHjNote(path){
     if(!res.ok)throw new Error('GitHub '+res.status);
     HJ.md[path]=await res.text();
   }catch(e){HJ.noteErr=e.message;}
-  HJ.noteLoading=false;if(tab==='hakjong'||tab==='graph')paint();
+  HJ.noteLoading=false;if(tab==='hakjong')paint();
 }
 function hjResolve(name){name=name.replace(/\.md$/i,'').trim();
   return HJ.notes.find(p=>p.replace(/\.md$/i,'').split('/').pop()===name)
@@ -1187,7 +1094,7 @@ async function hjScanAll(){
   const todo=HJ.notes.filter(p=>/\.md$/i.test(p)&&HJ.md[p]===undefined);
   HJ.scanning=true;paint();
   for(const p of todo){try{const r=await fetch(`https://api.github.com/repos/${c.repo}/contents/${p.split('/').map(encodeURIComponent).join('/')}?ref=${encodeURIComponent(branch)}`,{headers:{Authorization:'Bearer '+c.token,Accept:'application/vnd.github.raw+json'}});if(r.ok)HJ.md[p]=await r.text();}catch{}}
-  HJ.scanning=false;HJ.scanned=true;if(tab==='hakjong'||tab==='graph')paint();
+  HJ.scanning=false;HJ.scanned=true;if(tab==='hakjong')paint();
 }
 function hjBacklinks(path){
   const base=path.split('/').pop().replace(/\.md$/i,'').replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
@@ -1211,11 +1118,11 @@ async function loadHakjong(){
     HJ.notes=(j.tree||[]).filter(x=>x.type==='blob'&&!skip.test(x.path)).map(x=>x.path);
     HJ.err='';
   }catch(e){HJ.err=e.message;HJ.notes=[];}
-  HJ.loaded=true;HJ.loading=false;if(tab==='hakjong'||tab==='graph')paint();if(document.getElementById('sq'))runSearch();
+  HJ.loaded=true;HJ.loading=false;if(tab==='hakjong')paint();if(document.getElementById('sq'))runSearch();
 }
 function saveHakjong(){
   DB.hakjong={repo:($('#hj_repo').value||'').trim().replace(/^https?:\/\/github\.com\//,'').replace(/\.git$/,''),branch:(($('#hj_branch').value||'main').trim())||'main',token:($('#hj_token').value||'').trim()};
-  save(false);HJ.loaded=false;HJ.err='';toast('학종 저장소 연결됨');closeSheet();if(tab==='hakjong'||tab==='graph')paint();
+  save(false);HJ.loaded=false;HJ.err='';toast('학종 저장소 연결됨');closeSheet();if(tab==='hakjong')paint();
 }
 
 function openSettings(){const hc=DB.hakjong||{};
@@ -1284,7 +1191,7 @@ function closeAnyOverlay(){let c=false;const a=document.getElementById('actionsh
 window.addEventListener('popstate',function(){
   let handled=false;
   if(closeAnyOverlay())handled=true;
-  else if((tab==='hakjong'||tab==='graph')&&HJ.open){hjBack();handled=true;}
+  else if(tab==='hakjong'&&HJ.open){hjBack();handled=true;}
   else if(_tabHist.length){tab=_tabHist.pop();updateNav();scrollTop0();paint();handled=true;}
   else if(tab!=='today'){tab='today';updateNav();scrollTop0();paint();handled=true;}
   if(handled)pushGuard();/* 앱 유지: 다음 뒤로가기도 잡게 재무장. 홈에서 더 없으면 그대로 종료 */
