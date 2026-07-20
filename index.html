@@ -362,6 +362,8 @@
   .hjnav{display:flex;align-items:center;gap:10px;margin:2px 2px 8px;}
   .hjnav .bk{font-size:14px;font-weight:800;color:var(--accent);}
   .hjnav .hjgh{color:var(--ink3);font-size:12px;font-weight:700;}
+  .hjgraphwrap{overflow:auto;-webkit-overflow-scrolling:touch;max-height:72vh;border-radius:18px;background:linear-gradient(165deg,rgba(255,255,255,.05),rgba(255,255,255,.02));border:1px solid rgba(255,255,255,.06);padding:4px;touch-action:pan-x pan-y pinch-zoom;}
+  .hjgraphwrap svg{display:block;}
   .hjtags{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px;}
   .hjtags .tg{font-size:10.5px;font-weight:700;color:var(--accent);background:var(--accent-soft);padding:3px 9px;border-radius:30px;}
   .hjdoc{font-size:15px;line-height:1.7;color:var(--ink);word-break:break-word;}
@@ -591,7 +593,7 @@ function attachDockDrag(){const bar=document.getElementById('navtabs');if(!bar||
   bar.addEventListener('touchmove',e=>{if(!on)return;if(e.cancelable)e.preventDefault();const r=bar.getBoundingClientRect(),tw=th.offsetWidth;let x=e.touches[0].clientX-r.left-tw/2;x=Math.max(0,Math.min(bar.clientWidth-tw,x));th._x=x;th.style.transition='none';th.style.transform='translateX('+x+'px) scale(1.15)';},{passive:false});
   const rel=e=>{if(!on)return;on=false;th.classList.remove('drag');th.style.transition='transform .42s cubic-bezier(.32,1.75,.5,1), box-shadow .3s ease, background .3s ease';
     const cx=e.changedTouches?e.changedTouches[0].clientX:0,b=[...bar.querySelectorAll('.nb')],i=idxAt(cx),nt=b[i].dataset.tab;
-    if(nt!==tab){tab=nt;if(th)th._lastTab=tab;scrollTop0();paint();}else{th._x=b[i].offsetLeft;th.style.transform='translateX('+b[i].offsetLeft+'px)';}};
+    if(nt!==tab){_tabHist.push(tab);tab=nt;if(th)th._lastTab=tab;scrollTop0();paint();}else{th._x=b[i].offsetLeft;th.style.transform='translateX('+b[i].offsetLeft+'px)';}};
   bar.addEventListener('touchend',rel,{passive:true});
   bar.addEventListener('touchcancel',()=>{on=false;th.classList.remove('drag');placeThumb();},{passive:true});}
 function statRangeDays(){const base=parseYmd(todayStr());const a=[];for(let i=statRange-1;i>=0;i--){const d=new Date(base);d.setDate(base.getDate()-i);a.push(ymd(d));}return a;}
@@ -603,6 +605,7 @@ function statTick(){const t=document.getElementById('stTotal');if(!t){clearInter
 function updateNav(){document.querySelectorAll('.nb').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));placeThumb();}
 function scrollTop0(){window.scrollTo(0,0);var s=document.querySelector('.scroll');if(s)s.scrollTop=0;}
 function switchTab(t){if(t===tab){scrollTop0();paint();return;}
+  _tabHist.push(tab);
   const dir=TABS.indexOf(t)>TABS.indexOf(tab)?1:-1;tab=t;updateNav();scrollTop0();materializeWindow();slidePage(viewHTML(),dir);}
 function slidePage(newHTML,dir){
   if(_animating){V.innerHTML=newHTML;postPaint();return;}
@@ -1004,7 +1007,7 @@ function closeAction(){$('#actionsheet').classList.remove('show');$('#ascrim').c
 
 /* ===== settings / sync / backup ===== */
 /* ===== 학종 (GitHub 볼트) ===== */
-let HJ={loaded:false,loading:false,notes:[],err:'',expanded:new Set(),open:null,md:{},noteLoading:false,noteErr:'',scanning:false,scanned:false};
+let HJ={loaded:false,loading:false,notes:[],err:'',expanded:new Set(),open:null,md:{},noteLoading:false,noteErr:'',scanning:false,scanned:false,graph:false,graphPos:null};
 function hjReload(){HJ.loaded=false;HJ.err='';paint();}
 function hjToggle(p){p=decodeURIComponent(p);if(HJ.expanded.has(p))HJ.expanded.delete(p);else HJ.expanded.add(p);paint();}
 function hjBuildTree(paths){
@@ -1048,10 +1051,77 @@ function hakjongHTML(){
     else body=hjMd(HJ.md[HJ.open])+hjBacklinks(HJ.open);
     return `<div class="hjnav"><button class="bk" onclick="hjBack()">‹ 볼트</button><a class="hjgh" href="${gh}" target="_blank" rel="noopener" style="margin-left:auto">GitHub ↗</a></div><div class="head" style="padding:2px 4px 10px"><div class="ttl" style="font-size:22px;line-height:1.2">${esc(title)}</div></div><div class="card">${body}</div>`;
   }
+  const nMd=HJ.notes.filter(p=>/\.md$/i.test(p)).length;
+  if(HJ.graph){
+    return `<div class="eyebrow" style="justify-content:space-between"><span>그래프 · ${nMd}개 노트</span><span class="add" onclick="hjToggleGraph()">☰ 목록</span></div>${hjGraphHTML()}`;
+  }
   const tree=hjBuildTree(HJ.notes);
-  return `<div class="eyebrow" style="justify-content:space-between"><span>볼트 · ${HJ.notes.filter(p=>/\.md$/i.test(p)).length}개 노트</span><span class="add" onclick="hjReload()">↻ 새로고침</span></div><div class="card" style="padding:6px 8px">${hjRenderTree(tree,0,c)}</div>`;
+  return `<div class="eyebrow" style="justify-content:space-between"><span>볼트 · ${nMd}개 노트</span><span><span class="add" onclick="hjToggleGraph()">🕸 그래프</span><span class="add" style="margin-left:14px" onclick="hjReload()">↻</span></span></div><div class="card" style="padding:6px 8px">${hjRenderTree(tree,0,c)}</div>`;
 }
 function hjBack(){HJ.open=null;paint();}
+function hjToggleGraph(){HJ.graph=!HJ.graph;HJ.graphPos=null;HJ.open=null;if(HJ.graph&&!HJ.scanned&&!HJ.scanning)hjScanAll();paint();}
+function hjGraphHTML(){
+  const want=HJ.notes.filter(p=>/\.md$/i.test(p)).length;
+  const have=Object.keys(HJ.md).filter(p=>/\.md$/i.test(p)).length;
+  if(HJ.scanning||have<want*0.6)return `<div class="empty">${HJ.scanning?'그래프 만드는 중… (노트 불러오기)':'스캔 필요'}<br><span style="font-size:12px;color:var(--ink3)">${have}/${want}</span></div>`;
+  const g=hjBuildGraph();
+  if(!g.nodes.length)return `<div class="empty">연결된 노트 없음</div>`;
+  if(!HJ.graphPos||HJ.graphPos.length!==g.nodes.length)HJ.graphPos=hjLayout(g);
+  return `<div class="hjgraphwrap">${hjGraphSVG(g,HJ.graphPos)}</div><div style="font-size:11.5px;color:var(--ink3);margin:8px 4px 0">점을 누르면 노트가 열려요 · 두 손가락으로 확대</div>`;
+}
+function hjFolderColor(seg){
+  const m={'1학년':'#5b8def','지속_프로젝트':'#b06cf0','진로_아카이브':'#28c2a8','독서':'#f0993c','성적':'#ef5a6f','_지침':'#8a94a6'};
+  return m[seg]||'#e9b949';/* 루트(마스터·대시보드 등)=골드 허브 */
+}
+function hjBuildGraph(){
+  const paths=Object.keys(HJ.md).filter(p=>/\.md$/i.test(p));
+  const idx={};paths.forEach((p,i)=>idx[p]=i);
+  const nodes=paths.map(p=>({p,name:p.split('/').pop().replace(/\.md$/i,''),deg:0,seg:(p.indexOf('/')<0?'':p.split('/')[0])}));
+  const edges=[],seen=new Set();
+  paths.forEach(p=>{const src=HJ.md[p]||'';const re=/\[\[([^\]|#]+)/g;let m;
+    while(m=re.exec(src)){let t=m[1].trim();
+      if(/\.(png|jpe?g|gif|svg|webp|pdf|hwp|docx?|xlsx?|pptx?|c|py|ipynb)$/i.test(t))continue;
+      const tp=hjResolve(t);
+      if(tp&&tp!==p&&idx[tp]!==undefined){const k=idx[p]<idx[tp]?idx[p]+'-'+idx[tp]:idx[tp]+'-'+idx[p];
+        if(!seen.has(k)){seen.add(k);edges.push([idx[p],idx[tp]]);nodes[idx[p]].deg++;nodes[idx[tp]].deg++;}}}});
+  return {nodes,edges};
+}
+function hjLayout(g){
+  const N=g.nodes.length,W=1200,H=1200,cx=W/2,cy=H/2;
+  const pos=g.nodes.map((n,i)=>({x:cx+Math.cos(i/N*6.2832)*350+(Math.random()*20-10),y:cy+Math.sin(i/N*6.2832)*350+(Math.random()*20-10)}));
+  const k=Math.sqrt((W*H)/Math.max(N,1))*0.5;
+  let temp=W*0.12;
+  for(let it=0;it<300;it++){
+    const disp=pos.map(()=>({x:0,y:0}));
+    for(let i=0;i<N;i++)for(let j=i+1;j<N;j++){
+      let dx=pos[i].x-pos[j].x,dy=pos[i].y-pos[j].y,d=Math.sqrt(dx*dx+dy*dy)||0.1;
+      const f=(k*k)/d;dx/=d;dy/=d;disp[i].x+=dx*f;disp[i].y+=dy*f;disp[j].x-=dx*f;disp[j].y-=dy*f;}
+    g.edges.forEach(([a,b])=>{
+      let dx=pos[a].x-pos[b].x,dy=pos[a].y-pos[b].y,d=Math.sqrt(dx*dx+dy*dy)||0.1;
+      const f=(d*d)/k;dx/=d;dy/=d;disp[a].x-=dx*f;disp[a].y-=dy*f;disp[b].x+=dx*f;disp[b].y+=dy*f;});
+    for(let i=0;i<N;i++){
+      disp[i].x+=(cx-pos[i].x)*0.012;disp[i].y+=(cy-pos[i].y)*0.012;/* gravity */
+      let d=Math.sqrt(disp[i].x*disp[i].x+disp[i].y*disp[i].y)||0.1;
+      pos[i].x+=disp[i].x/d*Math.min(d,temp);pos[i].y+=disp[i].y/d*Math.min(d,temp);}
+    temp*=0.985;
+  }
+  return pos;
+}
+function hjGraphSVG(g,pos){
+  let minX=1e9,minY=1e9,maxX=-1e9,maxY=-1e9;
+  pos.forEach(p=>{if(p.x<minX)minX=p.x;if(p.y<minY)minY=p.y;if(p.x>maxX)maxX=p.x;if(p.y>maxY)maxY=p.y;});
+  const pad=60;minX-=pad;minY-=pad;maxX+=pad;maxY+=pad;const w=maxX-minX,h=maxY-minY;
+  const edges=g.edges.map(([a,b])=>`<line x1="${pos[a].x.toFixed(1)}" y1="${pos[a].y.toFixed(1)}" x2="${pos[b].x.toFixed(1)}" y2="${pos[b].y.toFixed(1)}" stroke="rgba(255,255,255,.13)" stroke-width="1.2"/>`).join('');
+  const maxDeg=Math.max(1,...g.nodes.map(n=>n.deg));
+  const nodes=g.nodes.map((nd,i)=>{
+    const r=(4+Math.min(nd.deg,10)*1.4).toFixed(1),col=hjFolderColor(nd.seg);
+    const showLbl=nd.deg>=2||g.nodes.length<=24;
+    const lbl=showLbl?`<text x="${pos[i].x.toFixed(1)}" y="${(pos[i].y-(+r)-3).toFixed(1)}" font-size="${nd.deg>=maxDeg*0.6?13:10.5}" fill="var(--ink2)" text-anchor="middle" style="pointer-events:none">${esc(nd.name.length>14?nd.name.slice(0,13)+'…':nd.name)}</text>`:'';
+    return `<g onclick="openHjNote('${encodeURIComponent(nd.p)}')" style="cursor:pointer"><circle cx="${pos[i].x.toFixed(1)}" cy="${pos[i].y.toFixed(1)}" r="${r}" fill="${col}"/>${lbl}</g>`;
+  }).join('');
+  const dispW=Math.min(Math.max(w,700),1600);
+  return `<svg viewBox="${minX.toFixed(1)} ${minY.toFixed(1)} ${w.toFixed(1)} ${h.toFixed(1)}" width="${dispW.toFixed(0)}" height="${(dispW*h/w).toFixed(0)}" xmlns="http://www.w3.org/2000/svg">${edges}${nodes}</svg>`;
+}
 async function openHjNote(path){
   path=decodeURIComponent(path);HJ.open=path;HJ.noteErr='';
   const sc=document.querySelector('.scroll');if(sc)sc.scrollTop=0;
@@ -1173,9 +1243,26 @@ function wipe(){actionSheet('정말 전체 삭제할까? 되돌릴 수 없어.',
 function openSheet(html){$('#sheet').innerHTML='<div class="sheethd"><div class="grab"></div><button class="sheetx" onclick="closeSheet()" aria-label="닫기">✕</button></div><div class="sheetbody">'+html+'</div>';$('#sheet').classList.add('show');$('#scrim').classList.add('show');}
 function closeSheet(){$('#sheet').classList.remove('show');$('#scrim').classList.remove('show');}
 
+/* ===== nav history (Android/gesture 뒤로가기 → 앱 안에서 한 단계 뒤로) ===== */
+let _tabHist=[];
+function pushGuard(){try{history.pushState({cvp:1},'');}catch(e){}}
+function closeAnyOverlay(){let c=false;const a=document.getElementById('actionsheet'),s=document.getElementById('sheet');
+  if(a&&a.classList.contains('show')){closeAction();c=true;}
+  if(s&&s.classList.contains('show')){closeSheet();c=true;}
+  return c;}
+window.addEventListener('popstate',function(){
+  let handled=false;
+  if(closeAnyOverlay())handled=true;
+  else if(tab==='hakjong'&&HJ.open){hjBack();handled=true;}
+  else if(tab==='hakjong'&&HJ.graph){HJ.graph=false;paint();handled=true;}
+  else if(_tabHist.length){tab=_tabHist.pop();updateNav();scrollTop0();paint();handled=true;}
+  else if(tab!=='today'){tab='today';updateNav();scrollTop0();paint();handled=true;}
+  if(handled)pushGuard();/* 앱 유지: 다음 뒤로가기도 잡게 재무장. 홈에서 더 없으면 그대로 종료 */
+});
+
 /* ===== boot ===== */
 window.addEventListener('online',()=>{if(DB.sync.enabled)syncPush(true);});
-load();applyTheme();paint();
+load();applyTheme();paint();pushGuard();
 if(DB.sync.enabled&&navigator.onLine)syncPull({auto:true,silent:true});
 if(DB.sync.enabled&&DB.sync.gistId&&navigator.onLine)pullGist();
 if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
