@@ -406,6 +406,7 @@
       <button class="nb on" data-tab="today" onclick="switchTab('today')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 2"/></svg><span class="lb">오늘</span></button>
       <button class="nb" data-tab="cal" onclick="switchTab('cal')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="16" rx="3.2"/><path d="M3 9.2h18M8 2.5v4M16 2.5v4"/></svg><span class="lb">달력</span></button>
       <button class="nb" data-tab="hakjong" onclick="switchTab('hakjong')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4 22 9l-10 5L2 9z"/><path d="M6 11.2V15c0 1.2 2.7 2.6 6 2.6s6-1.4 6-2.6v-3.8"/></svg><span class="lb">학종</span></button>
+      <button class="nb" data-tab="graph" onclick="switchTab('graph')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="18" r="2.4"/><circle cx="18" cy="17" r="2.4"/><circle cx="13" cy="6" r="2.6"/><path d="M7.6 16.2 11.4 8M14.6 7.4 16.7 14.7M8.1 17.6l7.6-.7"/></svg><span class="lb">그래프</span></button>
     </div>
     <button class="dock-search" onclick="openSearch()" aria-label="검색"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></button>
   </nav>
@@ -441,7 +442,7 @@ const ACCENTS=['#32ADE6','#4C6FFF','#6E8BFF','#0A84FF','#34C759','#FF7A00','#8B5
 
 /* state */
 const KEY='planner_v2';
-const TABS=['today','cal','hakjong'];
+const TABS=['today','cal','hakjong','graph'];
 let DB=null, curMonth=new Date(), tab='today', planSeg='exam', timerTick=null, statT=null, _animating=false;
 let openSubj={}, openProj={};
 
@@ -529,7 +530,7 @@ function taskTag(t){const pid=t.projectId||t.subjectId;if(!pid)return null;const
 function memosFor(kind,id){return DB.memos.filter(m=>kind==='subject'?m.subjectId===id:m.projectId===id);}
 
 /* ===== paint / tabs / swipe ===== */
-function viewHTML(){return ({today:todayHTML,cal:calHTML,plan:planHTML,hakjong:hakjongHTML}[tab]||todayHTML)();}
+function viewHTML(){return ({today:todayHTML,cal:calHTML,plan:planHTML,hakjong:hakjongHTML,graph:graphTabHTML}[tab]||todayHTML)();}
 function paint(){materializeWindow();V.innerHTML=viewHTML();postPaint();updateNav();}
 function attachReorder(listId,onDone){
   const list=document.getElementById(listId);if(!list||list._rb)return;list._rb=true;
@@ -992,8 +993,14 @@ function runSearch(){const q=($('#sq').value||'').trim().toLowerCase(),box=$('#s
   const hc=DB.hakjong||{};
   if(hc.repo&&hc.token&&!HJ.loaded&&!HJ.loading)loadHakjong();
   if(hc.repo&&HJ.notes&&HJ.notes.length){const branch=hc.branch||'main';
-    HJ.notes.filter(p=>has(p)).slice(0,40).forEach(p=>{const url=`https://github.com/${hc.repo}/blob/${branch}/${p.split('/').map(encodeURIComponent).join('/')}`;
-      h+=sres('학종 · '+(p.split('/').slice(0,-1).join('/')||'루트'),p.split('/').pop().replace(/\.md$/i,''),`window.open('${url}','_blank')`);});}
+    HJ.notes.filter(p=>has(p)).slice(0,40).forEach(p=>{
+      const label=p.split('/').pop().replace(/\.md$/i,''),folder='학종 · '+(p.split('/').slice(0,-1).join('/')||'루트');
+      if(/\.md$/i.test(p)){/* 노트는 앱 내에서 열기 */
+        h+=sres(folder,label,`closeSheet();openHjNote('${encodeURIComponent(p)}');switchTab('hakjong')`);
+      }else{/* 첨부 파일(hwp/pdf 등)은 앱이 못 여니 GitHub로 */
+        const url=`https://github.com/${hc.repo}/blob/${branch}/${p.split('/').map(encodeURIComponent).join('/')}`;
+        h+=sres(folder+' · 파일',p.split('/').pop(),`window.open('${url}','_blank')`);}
+    });}
   box.innerHTML=h||`<div class="empty" style="margin-top:10px">결과 없음</div>`;}
 function sres(type,text,act){return `<div class="sres" onclick="${act}"><span class="stype">${esc(type)}</span><span class="sx">${esc(text)}</span></div>`;}
 
@@ -1052,29 +1059,45 @@ function hakjongHTML(){
     return `<div class="hjnav"><button class="bk" onclick="hjBack()">‹ 볼트</button><a class="hjgh" href="${gh}" target="_blank" rel="noopener" style="margin-left:auto">GitHub ↗</a></div><div class="head" style="padding:2px 4px 10px"><div class="ttl" style="font-size:22px;line-height:1.2">${esc(title)}</div></div><div class="card">${body}</div>`;
   }
   const nMd=HJ.notes.filter(p=>/\.md$/i.test(p)).length;
-  if(HJ.graph){
-    return `<div class="eyebrow" style="justify-content:space-between"><span>그래프 · ${nMd}개 노트</span><span class="add" onclick="hjToggleGraph()">☰ 목록</span></div>${hjGraphHTML()}`;
-  }
   const tree=hjBuildTree(HJ.notes);
-  return `<div class="eyebrow" style="justify-content:space-between"><span>볼트 · ${nMd}개 노트</span><span><span class="add" onclick="hjToggleGraph()">🕸 그래프</span><span class="add" style="margin-left:14px" onclick="hjReload()">↻</span></span></div><div class="card" style="padding:6px 8px">${hjRenderTree(tree,0,c)}</div>`;
+  return `<div class="eyebrow" style="justify-content:space-between"><span>볼트 · ${nMd}개 노트</span><span class="add" onclick="hjReload()">↻ 새로고침</span></div><div class="card" style="padding:6px 8px">${hjRenderTree(tree,0,c)}</div>`;
 }
 function hjBack(){HJ.open=null;paint();}
-function hjToggleGraph(){HJ.graph=!HJ.graph;HJ.graphPos=null;HJ.open=null;if(HJ.graph&&!HJ.scanned&&!HJ.scanning)hjScanAll();paint();}
-function hjGraphHTML(){
+/* ===== 그래프 탭 (학종 노트 관계망) ===== */
+function graphTabHTML(){
+  $('#headTtl').textContent='그래프';$('#headSub').textContent='학종 노트 관계망';
+  const c=DB.hakjong||{};
+  if(!c.repo||!c.token)return `<div class="empty">설정(⚙)에서 GitHub 저장소와 토큰을<br>연결하면 노트 관계망이 여기 떠요.</div>`;
+  if(!HJ.loaded){loadHakjong();return `<div class="empty">불러오는 중…</div>`;}
+  if(HJ.err)return `<div class="empty">${esc(HJ.err)}<br><button class="btn ghost" style="margin-top:12px" onclick="hjReload()">다시 시도</button></div>`;
+  if(HJ.open){/* 그래프에서 노드 탭 → 노트 열림 (같은 탭 안에서) */
+    const branch=c.branch||'main';
+    const gh=`https://github.com/${c.repo}/blob/${branch}/${HJ.open.split('/').map(encodeURIComponent).join('/')}`;
+    const title=HJ.open.split('/').pop().replace(/\.md$/i,'');
+    let body;
+    if(HJ.noteLoading)body=`<div class="empty">불러오는 중…</div>`;
+    else if(HJ.noteErr)body=`<div class="empty">${esc(HJ.noteErr)}<br><button class="btn ghost" style="margin-top:12px" onclick="openHjNote('${encodeURIComponent(HJ.open)}')">다시</button></div>`;
+    else body=hjMd(HJ.md[HJ.open])+hjBacklinks(HJ.open);
+    return `<div class="hjnav"><button class="bk" onclick="hjBack()">‹ 그래프</button><a class="hjgh" href="${gh}" target="_blank" rel="noopener" style="margin-left:auto">GitHub ↗</a></div><div class="head" style="padding:2px 4px 10px"><div class="ttl" style="font-size:22px;line-height:1.2">${esc(title)}</div></div><div class="card">${body}</div>`;
+  }
   const want=HJ.notes.filter(p=>/\.md$/i.test(p)).length;
-  const have=Object.keys(HJ.md).filter(p=>/\.md$/i.test(p)).length;
-  if(HJ.scanning||have<want*0.6)return `<div class="empty">${HJ.scanning?'그래프 만드는 중… (노트 불러오기)':'스캔 필요'}<br><span style="font-size:12px;color:var(--ink3)">${have}/${want}</span></div>`;
+  if(!want)return `<div class="empty">노트 없음</div>`;
+  // 링크(엣지)용 본문 스캔 — 아직이면 시작. 노드는 전체 노트 목록에서 바로 그림.
+  if(!HJ.scanned&&!HJ.scanning)hjScanAll();
   const g=hjBuildGraph();
-  if(!g.nodes.length)return `<div class="empty">연결된 노트 없음</div>`;
   if(!HJ.graphPos||HJ.graphPos.length!==g.nodes.length)HJ.graphPos=hjLayout(g);
-  return `<div class="hjgraphwrap">${hjGraphSVG(g,HJ.graphPos)}</div><div style="font-size:11.5px;color:var(--ink3);margin:8px 4px 0">점을 누르면 노트가 열려요 · 두 손가락으로 확대</div>`;
+  const have=Object.keys(HJ.md).filter(p=>/\.md$/i.test(p)).length;
+  const hint=HJ.scanned?`${g.nodes.length}개 노트 · ${g.edges.length}개 연결 · 점을 누르면 열려요`
+    :`연결선 불러오는 중… (${have}/${want}) · <span class="add" onclick="paint()">새로고침</span>`;
+  return `<div class="eyebrow" style="justify-content:space-between"><span>관계망</span><span class="add" onclick="hjRegraph()">↻ 다시배치</span></div><div class="hjgraphwrap">${hjGraphSVG(g,HJ.graphPos)}</div><div style="font-size:11.5px;color:var(--ink3);margin:8px 4px 0">${hint}</div>`;
 }
+function hjRegraph(){HJ.graphPos=null;paint();}
 function hjFolderColor(seg){
   const m={'1학년':'#5b8def','지속_프로젝트':'#b06cf0','진로_아카이브':'#28c2a8','독서':'#f0993c','성적':'#ef5a6f','_지침':'#8a94a6'};
   return m[seg]||'#e9b949';/* 루트(마스터·대시보드 등)=골드 허브 */
 }
 function hjBuildGraph(){
-  const paths=Object.keys(HJ.md).filter(p=>/\.md$/i.test(p));
+  const paths=HJ.notes.filter(p=>/\.md$/i.test(p));/* 노드 = 전체 md 노트 (불러온 것만이 아니라) */
   const idx={};paths.forEach((p,i)=>idx[p]=i);
   const nodes=paths.map(p=>({p,name:p.split('/').pop().replace(/\.md$/i,''),deg:0,seg:(p.indexOf('/')<0?'':p.split('/')[0])}));
   const edges=[],seen=new Set();
@@ -1133,7 +1156,7 @@ async function openHjNote(path){
     if(!res.ok)throw new Error('GitHub '+res.status);
     HJ.md[path]=await res.text();
   }catch(e){HJ.noteErr=e.message;}
-  HJ.noteLoading=false;if(tab==='hakjong')paint();
+  HJ.noteLoading=false;if(tab==='hakjong'||tab==='graph')paint();
 }
 function hjResolve(name){name=name.replace(/\.md$/i,'').trim();
   return HJ.notes.find(p=>p.replace(/\.md$/i,'').split('/').pop()===name)
@@ -1156,7 +1179,7 @@ async function hjScanAll(){
   const todo=HJ.notes.filter(p=>/\.md$/i.test(p)&&HJ.md[p]===undefined);
   HJ.scanning=true;paint();
   for(const p of todo){try{const r=await fetch(`https://api.github.com/repos/${c.repo}/contents/${p.split('/').map(encodeURIComponent).join('/')}?ref=${encodeURIComponent(branch)}`,{headers:{Authorization:'Bearer '+c.token,Accept:'application/vnd.github.raw+json'}});if(r.ok)HJ.md[p]=await r.text();}catch{}}
-  HJ.scanning=false;HJ.scanned=true;if(tab==='hakjong')paint();
+  HJ.scanning=false;HJ.scanned=true;if(tab==='hakjong'||tab==='graph')paint();
 }
 function hjBacklinks(path){
   const base=path.split('/').pop().replace(/\.md$/i,'').replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
@@ -1180,11 +1203,11 @@ async function loadHakjong(){
     HJ.notes=(j.tree||[]).filter(x=>x.type==='blob'&&!skip.test(x.path)).map(x=>x.path);
     HJ.err='';
   }catch(e){HJ.err=e.message;HJ.notes=[];}
-  HJ.loaded=true;HJ.loading=false;if(tab==='hakjong')paint();if(document.getElementById('sq'))runSearch();
+  HJ.loaded=true;HJ.loading=false;if(tab==='hakjong'||tab==='graph')paint();if(document.getElementById('sq'))runSearch();
 }
 function saveHakjong(){
   DB.hakjong={repo:($('#hj_repo').value||'').trim().replace(/^https?:\/\/github\.com\//,'').replace(/\.git$/,''),branch:(($('#hj_branch').value||'main').trim())||'main',token:($('#hj_token').value||'').trim()};
-  save(false);HJ.loaded=false;HJ.err='';toast('학종 저장소 연결됨');closeSheet();if(tab==='hakjong')paint();
+  save(false);HJ.loaded=false;HJ.err='';toast('학종 저장소 연결됨');closeSheet();if(tab==='hakjong'||tab==='graph')paint();
 }
 
 function openSettings(){const hc=DB.hakjong||{};
@@ -1253,8 +1276,7 @@ function closeAnyOverlay(){let c=false;const a=document.getElementById('actionsh
 window.addEventListener('popstate',function(){
   let handled=false;
   if(closeAnyOverlay())handled=true;
-  else if(tab==='hakjong'&&HJ.open){hjBack();handled=true;}
-  else if(tab==='hakjong'&&HJ.graph){HJ.graph=false;paint();handled=true;}
+  else if((tab==='hakjong'||tab==='graph')&&HJ.open){hjBack();handled=true;}
   else if(_tabHist.length){tab=_tabHist.pop();updateNav();scrollTop0();paint();handled=true;}
   else if(tab!=='today'){tab='today';updateNav();scrollTop0();paint();handled=true;}
   if(handled)pushGuard();/* 앱 유지: 다음 뒤로가기도 잡게 재무장. 홈에서 더 없으면 그대로 종료 */
